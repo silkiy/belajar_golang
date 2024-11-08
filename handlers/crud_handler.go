@@ -2,34 +2,35 @@ package handlers
 
 import (
 	"encoding/json"
+	"net/http"
 	"go-rest-api/models"
 	"go-rest-api/utils"
-	"net/http"
+	// "fmt"
 	"strconv"
 )
 
-type RequestBody struct {
-	Status  string `json:"status"`
-	Message string `json:"message"`
-}
-
+// Handler untuk mendapatkan semua message
 func GetAllMessages(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	messages := utils.GetAllMessages()
+	messages, err := utils.GetAllMessages()
+	if err != nil {
+		http.Error(w, "Error fetching messages", http.StatusInternalServerError)
+		return
+	}
 	json.NewEncoder(w).Encode(messages)
 }
 
+// Handler untuk mendapatkan message berdasarkan ID
 func GetMessage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
 	id, err := strconv.Atoi(r.URL.Query().Get("id"))
 	if err != nil {
 		http.Error(w, "Invalid ID", http.StatusBadRequest)
 		return
 	}
 
-	message, found := utils.GetMessageByID(id)
-	if !found {
+	message, err := utils.GetMessageByID(id)
+	if err != nil {
 		http.Error(w, "Message not found", http.StatusNotFound)
 		return
 	}
@@ -37,17 +38,22 @@ func GetMessage(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(message)
 }
 
+// Handler untuk membuat message baru
 func CreateMessage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	var requestBody RequestBody
+	var requestBody struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+
 	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 		http.Error(w, "Error decoding request body", http.StatusBadRequest)
 		return
 	}
 
 	if requestBody.Status == "" || requestBody.Message == "" {
-		http.Error(w, "Status and Message cannot be empty", http.StatusBadRequest)
+		http.Error(w, "Both status and message are required", http.StatusBadRequest)
 		return
 	}
 
@@ -56,8 +62,10 @@ func CreateMessage(w http.ResponseWriter, r *http.Request) {
 		Message: requestBody.Message,
 	}
 
-	newMessage.ID = len(utils.GetAllMessages()) + 1
-	utils.AddMessage(newMessage)
+	if err := utils.AddMessage(newMessage); err != nil {
+		http.Error(w, "Error adding message", http.StatusInternalServerError)
+		return
+	}
 
 	response := map[string]string{
 		"status":  "success",
@@ -67,6 +75,7 @@ func CreateMessage(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// Handler untuk memperbarui message
 func UpdateMessage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -82,23 +91,11 @@ func UpdateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existingMessage, found := utils.GetMessageByID(id)
-	if !found {
-		http.Error(w, "Message not found", http.StatusNotFound)
-		return
-	}
+	updatedMessage.ID = id
 
-	if updatedMessage.Status != "" {
-		existingMessage.Status = updatedMessage.Status
-	}
-
-	if updatedMessage.Message != "" {
-		existingMessage.Message = updatedMessage.Message
-	}
-
-	success := utils.UpdateMessage(id, existingMessage)
-	if !success {
-		http.Error(w, "Failed to update message", http.StatusInternalServerError)
+	success, err := utils.UpdateMessage(id, updatedMessage)
+	if err != nil || !success {
+		http.Error(w, "Message not found or update failed", http.StatusNotFound)
 		return
 	}
 
@@ -110,6 +107,7 @@ func UpdateMessage(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// Handler untuk menghapus message
 func DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -119,12 +117,16 @@ func DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	success := utils.DeleteMessage(id)
-	if !success {
-		http.Error(w, "Message not found", http.StatusNotFound)
+	success, err := utils.DeleteMessage(id)
+	if err != nil || !success {
+		http.Error(w, "Message not found or deletion failed", http.StatusNotFound)
 		return
 	}
 
-	response := map[string]string{"status": "success", "message": "Message deleted successfully"}
+	response := map[string]string{
+		"status":  "success",
+		"message": "Message deleted successfully",
+	}
+
 	json.NewEncoder(w).Encode(response)
 }
